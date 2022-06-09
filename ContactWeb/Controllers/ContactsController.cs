@@ -8,6 +8,8 @@ using Microsoft.AspNetCore.Mvc.Rendering;
 using Microsoft.EntityFrameworkCore;
 using ContactWebModels;
 using MyContactManagerData;
+using ContactWeb.Models;
+using Microsoft.Extensions.Caching.Memory;
 
 namespace ContactWeb.Controllers
 {
@@ -16,12 +18,29 @@ namespace ContactWeb.Controllers
         private readonly MyContactManagerDbContext _context;
         private static List<State> _allStates;
         private static SelectList _statesData;
+        private IMemoryCache _cache;
 
-        public ContactsController(MyContactManagerDbContext context)
+        public ContactsController(MyContactManagerDbContext context, IMemoryCache cache)
         {
             _context = context;
-            _allStates =Task.Run(() => _context.States.ToListAsync()).Result;
+            _cache = cache;
+            SetAllStatesCachingData();
             _statesData = new SelectList(_allStates, "Id", "Abberviation");
+            
+        }
+
+        private void SetAllStatesCachingData()
+        {
+            //here we set cache so next time we run data we get it from cache
+            var allStates = new List<State>();
+            if (!_cache.TryGetValue(ContactCacheConstants.ALL_STATES, out allStates))
+            {
+                var allStatesData =Task.Run(() =>  _context.States.ToListAsync()).Result;
+
+                _cache.Set(ContactCacheConstants.ALL_STATES, allStatesData, TimeSpan.FromDays(1));
+                allStates = _cache.Get(ContactCacheConstants.ALL_STATES) as List<State>;
+            }
+            _allStates = allStates;
         }
 
         private async Task UpdateStateAndResetModelState(Contact contact)
@@ -75,6 +94,8 @@ namespace ContactWeb.Controllers
             UpdateStateAndResetModelState(contact);
             if (ModelState.IsValid)
             {
+                var state = await _context.States.SingleOrDefaultAsync(x => x.Id == contact.StateId);
+                contact.State = null;
                 await _context.Contacts.AddAsync(contact);
                 await _context.SaveChangesAsync();
                 return RedirectToAction(nameof(Index));

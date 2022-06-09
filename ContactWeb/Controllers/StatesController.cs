@@ -8,22 +8,37 @@ using Microsoft.AspNetCore.Mvc.Rendering;
 using Microsoft.EntityFrameworkCore;
 using ContactWebModels;
 using MyContactManagerData;
+using Microsoft.Extensions.Caching.Memory;
+using ContactWeb.Models;
 
 namespace ContactWeb.Controllers
 {
     public class StatesController : Controller
     {
         private readonly MyContactManagerDbContext _context;
+        private IMemoryCache _cache;
 
-        public StatesController(MyContactManagerDbContext context)
+        public StatesController(MyContactManagerDbContext context, IMemoryCache cache)
         {
             _context = context;
+            _cache = cache;
+
         }
 
         // GET: States
         public async Task<IActionResult> Index()
         {
-            return View(await _context.States.ToListAsync());
+            //here we set cache so next time we run data we get it from cache
+            var allStates = new List<State>();
+            if(!_cache.TryGetValue(ContactCacheConstants.ALL_STATES, out allStates))
+            {
+               var allStatesData = await _context.States.ToListAsync();
+
+                _cache.Set(ContactCacheConstants.ALL_STATES, allStatesData, TimeSpan.FromDays(1));
+                return View(allStatesData);
+            }
+
+            return View(allStates);
         }
 
         // GET: States/Details/5
@@ -61,6 +76,7 @@ namespace ContactWeb.Controllers
             {
                 _context.Add(state);
                 await _context.SaveChangesAsync();
+                _cache.Remove(ContactCacheConstants.ALL_STATES);//next time it has to find a state it will refresh
                 return RedirectToAction(nameof(Index));
             }
             return View(state);
@@ -98,8 +114,9 @@ namespace ContactWeb.Controllers
             {
                 try
                 {
-                    _context.Update(state);
+                    _context.Update(state);                 
                     await _context.SaveChangesAsync();
+                    _cache.Remove(ContactCacheConstants.ALL_STATES);//next time it has to find a state it will refresh
                 }
                 catch (DbUpdateConcurrencyException)
                 {
@@ -143,6 +160,7 @@ namespace ContactWeb.Controllers
             var state = await _context.States.FindAsync(id);
             _context.States.Remove(state);
             await _context.SaveChangesAsync();
+            _cache.Remove(ContactCacheConstants.ALL_STATES);//next time it has to find a state it will refresh
             return RedirectToAction(nameof(Index));
         }
 
